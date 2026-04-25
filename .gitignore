@@ -3,10 +3,9 @@
 *.pyc
 __pycache__/
 
-# Test cache
-.pytest_cache/
-
-# Environment files
+# Virtual environments
+venv/
+.venv/
 .env
 .env.local
 *.env.*
@@ -21,22 +20,25 @@ __pycache__/
 *.swo
 *.tmp
 
-# Dependencies
-.venv/
-venv/
-node_modules/
-
 # Build/dist directories
 build/
 dist/
 target/
 
 # Coverage reports
-.coverage
 coverage/
 htmlcov/
+.coverage
 
-# Python cache
+# Dependency cache
 .mypy_cache/
-__pycache__/
+.pytest_cache/
+.node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
