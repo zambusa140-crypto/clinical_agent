@@ -43,7 +43,9 @@ async def test_full_intake_flow(client):
         "About a 7 out of 10",
         "It gets worse when I walk",
         "Resting helps a little",
-        "cardiac:palpitations present,no syncope|respiratory:mild shortness of breath,no cough",
+        "palpitations present, no syncope",
+        "mild shortness of breath, no cough",
+        "done",
     ]
 
     final_data = None
