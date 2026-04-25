@@ -10,3 +10,7 @@ class IntakeState(TypedDict):
     ros: dict[str, list[str]]
     current_node: str
     clinical_brief: Optional[ClinicalBrief]
+    ros_systems: list[str]
+    ros_current_index: int
+    ros_pending_system: Optional[str]
+    last_processed_message_index: int
