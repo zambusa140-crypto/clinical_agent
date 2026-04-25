@@ -1,11 +1,9 @@
-from typing import Optional, TypedDict, Annotated, Sequence
+from typing import Optional, TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Command
 
 
 def add_messages(left: list[dict], right: list[dict]) -> list[dict]:
-    """Reducer function to append messages."""
     return left + right
 
 
@@ -104,7 +102,6 @@ def intake_node(state: IntakeState) -> dict:
     elif not cc:
         reply = "Hello, I'm conducting your pre-visit clinical intake. What brings you in today?"
     else:
-        # CC already set, don't re-process - just signal to move on
         return {
             "current_node": "hpi",
         }
@@ -143,12 +140,9 @@ def hpi_node(state: IntakeState) -> dict:
             "vague_retry_field": None,
         }
 
-    # Check if there's a new user message to process
     has_new_user_msg = len(messages) > last_idx
     
-    # Get the actual new user message (not the last message in the list)
     if has_new_user_msg:
-        # Find the first unprocessed user message
         user_msg = None
         for i in range(last_idx, len(messages)):
             if messages[i].get("role") == "user":
@@ -187,7 +181,6 @@ def hpi_node(state: IntakeState) -> dict:
                 "vague_retry_field": None,
             }
 
-    # No new user message - just ask the question
     reply = HPI_QUESTIONS[next_field]
     return {
         "messages": [{"role": "assistant", "content": reply}],
@@ -333,23 +326,18 @@ def brief_generator_node(state: IntakeState) -> dict:
 
 
 def route_from_intake(state: IntakeState) -> str:
-    """Route from intake to hpi."""
     return "hpi"
 
 
 def route_from_hpi(state: IntakeState) -> str:
-    """Route from hpi based on completion status."""
     hpi = state.get("hpi", {})
     all_filled = all(hpi.get(f) for f in HPI_FIELDS)
-    
     return "ros" if all_filled else "hpi"
 
 
 def route_from_ros(state: IntakeState) -> str:
-    """Route from ros based on completion status."""
     ros_systems = state.get("ros_systems", [])
     current_index = state.get("ros_current_index", 0)
-    
     all_processed = current_index >= len(ros_systems)
     return "brief_generator" if all_processed else "ros"
 
