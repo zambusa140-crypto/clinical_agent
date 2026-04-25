@@ -104,12 +104,15 @@ def intake_node(state: IntakeState) -> dict:
     elif not cc:
         reply = "Hello, I'm conducting your pre-visit clinical intake. What brings you in today?"
     else:
-        reply = "Moving to HPI section..."
+        # CC already set, don't re-process - just signal to move on
+        return {
+            "current_node": "hpi",
+        }
 
     return {
         "messages": [{"role": "assistant", "content": reply}],
         "chief_complaint": cc,
-        "current_node": "intake" if not cc else "hpi",
+        "current_node": "hpi",
         "ros_systems": state.get("ros_systems", []),
         "ros_current_index": state.get("ros_current_index", 0),
         "ros_pending_system": state.get("ros_pending_system"),
@@ -140,11 +143,19 @@ def hpi_node(state: IntakeState) -> dict:
             "vague_retry_field": None,
         }
 
+    # Check if there's a new user message to process
     has_new_user_msg = len(messages) > last_idx
-
+    
+    # Get the actual new user message (not the last message in the list)
     if has_new_user_msg:
-        user_msg = messages[-1]
-        if user_msg.get("role") == "user":
+        # Find the first unprocessed user message
+        user_msg = None
+        for i in range(last_idx, len(messages)):
+            if messages[i].get("role") == "user":
+                user_msg = messages[i]
+                break
+        
+        if user_msg:
             answer = user_msg.get("content", "")
 
             if _is_vague_answer(answer):
@@ -176,6 +187,7 @@ def hpi_node(state: IntakeState) -> dict:
                 "vague_retry_field": None,
             }
 
+    # No new user message - just ask the question
     reply = HPI_QUESTIONS[next_field]
     return {
         "messages": [{"role": "assistant", "content": reply}],
@@ -320,6 +332,28 @@ def brief_generator_node(state: IntakeState) -> dict:
     }
 
 
+def route_from_intake(state: IntakeState) -> str:
+    """Route from intake to hpi."""
+    return "hpi"
+
+
+def route_from_hpi(state: IntakeState) -> str:
+    """Route from hpi based on completion status."""
+    hpi = state.get("hpi", {})
+    all_filled = all(hpi.get(f) for f in HPI_FIELDS)
+    
+    return "ros" if all_filled else "hpi"
+
+
+def route_from_ros(state: IntakeState) -> str:
+    """Route from ros based on completion status."""
+    ros_systems = state.get("ros_systems", [])
+    current_index = state.get("ros_current_index", 0)
+    
+    all_processed = current_index >= len(ros_systems)
+    return "brief_generator" if all_processed else "ros"
+
+
 def build_graph() -> tuple:
     workflow = StateGraph(IntakeState)
 
@@ -329,6 +363,10 @@ def build_graph() -> tuple:
     workflow.add_node("brief_generator", brief_generator_node)
 
     workflow.add_edge(START, "intake")
+    workflow.add_conditional_edges("intake", route_from_intake, {"hpi": "hpi"})
+    workflow.add_conditional_edges("hpi", route_from_hpi, {"hpi": "hpi", "ros": "ros"})
+    workflow.add_conditional_edges("ros", route_from_ros, {"ros": "ros", "brief_generator": "brief_generator"})
+    workflow.add_edge("brief_generator", END)
 
     checkpointer = MemorySaver()
     graph = workflow.compile(checkpointer=checkpointer, interrupt_after=["intake", "hpi", "ros"])

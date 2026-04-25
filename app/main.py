@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.graph import build_graph
 from app.schemas import ClinicalBrief
+from langgraph.types import Command
 
 
 class ChatRequest(BaseModel):
@@ -74,49 +75,21 @@ async def health():
 async def chat(request: ChatRequest):
     config = {"configurable": {"thread_id": request.session_id}}
     
-    # Get current node before running
-    current_node_before = get_current_node(request.session_id)
-    
-    # Build input state from checkpoint or start fresh
+    # Get current checkpoint state
     snapshot = graph.get_state(config)
-    if snapshot and snapshot.values and snapshot.values.get("messages"):
-        # Continue existing conversation - add user message to state
-        existing_messages = list(snapshot.values.get("messages", []))
-        new_messages = existing_messages + [{"role": "user", "content": request.message}]
-        input_state = {"messages": new_messages}
-    else:
-        # New conversation
-        input_state = {"messages": [{"role": "user", "content": request.message}]}
     
-    # Run graph with updated state
-    result = graph.invoke(input_state, config=config)
-    
-    # Get updated state after first interrupt
-    current_node = get_current_node(request.session_id)
-    
-    # If we're interrupted at a node that needs more processing (hpi/ros), continue until done/brief_generator
-    while current_node in ["hpi", "ros"] and current_node != "done":
-        # Check if there's still work to do by looking at the state
-        if snapshot and snapshot.values:
-            hpi = snapshot.values.get("hpi", {})
-            ros_systems = snapshot.values.get("ros_systems", [])
-            ros_current_index = snapshot.values.get("ros_current_index", 0)
-            
-            # For HPI: check if all fields are filled
-            if current_node == "hpi":
-                all_hpi_filled = all(hpi.get(f) for f in ["onset", "location", "duration", "character", "severity", "aggravating", "relieving"])
-                if not all_hpi_filled:
-                    break  # Need more user input
-            # For ROS: check if all systems are processed
-            elif current_node == "ros":
-                if ros_current_index < len(ros_systems):
-                    break  # Need more user input
-        
-        # Continue running without new input
+    # Check if graph is interrupted and waiting for input
+    if snapshot.next:
+        # First update state with the user message
+        graph.update_state(config, {"messages": [{"role": "user", "content": request.message}]})
+        # Then resume execution
         result = graph.invoke(None, config=config)
-        current_node = get_current_node(request.session_id)
-        snapshot = graph.get_state(config)
+    else:
+        # New conversation - start fresh
+        input_state = {"messages": [{"role": "user", "content": request.message}]}
+        result = graph.invoke(input_state, config=config)
     
+    current_node = get_current_node(request.session_id)
     reply = get_last_reply(request.session_id)
     brief_dict = get_brief(request.session_id)
     
@@ -145,9 +118,9 @@ def run_cli():
         # Build input state from checkpoint or start fresh
         snapshot = graph.get_state(config)
         if snapshot and snapshot.values and snapshot.values.get("messages"):
-            existing_messages = list(snapshot.values.get("messages", []))
-            new_messages = existing_messages + [{"role": "user", "content": user_input}]
-            input_state = {"messages": new_messages}
+            # Continue existing conversation - only pass the new user message
+            # The Annotated reducer will append it to existing messages
+            input_state = {"messages": [{"role": "user", "content": user_input}]}
         else:
             input_state = {"messages": [{"role": "user", "content": user_input}]}
         
